@@ -28,8 +28,24 @@ class ApiEndpoints {
   static String calendarTransactions(int year, int month) => "$BASE_URL/transactions/calendar/$year/$month";
   static String searchTransactions(String keyword) => "$BASE_URL/transactions/search?keyword=$keyword";
 
+  // ✅ Statistics Endpoint (Newly Added)
+  static String transactionStatistics(int year, int month) =>
+      "$BASE_URL/transactions/statistics?year=$year&month=$month";
+
+
   // ✅ Categories Endpoints
   static const String categories = "$BASE_URL/categories";
   static String categoryDetails(String id) => "$BASE_URL/categories/$id";
   static String subCategories(String id) => "$BASE_URL/categories/$id/subcategories";
+
+  // ✅ Budget Endpoints
+  static const String budgets = "$BASE_URL/budgets";
+  static const String createBudget = "$BASE_URL/budgets/create";
+  static const String autoAllocateBudget = "$BASE_URL/budgets/auto-allocate";
+  static String updateBudget(String id) => "$BASE_URL/budgets/$id";
+  static String deleteBudget(String id) => "$BASE_URL/budgets/$id";
+  static const String budgetSummary = "$BASE_URL/budgets/summary";
+
 }
+
+

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:mobile_cashpath/models/category_model.dart';
 import 'package:mobile_cashpath/config/api_endpoints.dart';
+import 'package:mobile_cashpath/core/services/auth_service.dart';
 
 class CategoryService {
   final http.Client client = http.Client();
@@ -32,7 +33,6 @@ class CategoryService {
     }
   }
 
-  // ✅ Create a New Category
   Future<Category> createCategory({
     required String name,
     required String type,
@@ -40,9 +40,13 @@ class CategoryService {
     String? color,
     String? parentId,
   }) async {
+    final token = await AuthService.getToken(); // ✅ Get token here
     final response = await client.post(
       Uri.parse(ApiEndpoints.categories),
-      headers: {"Content-Type": "application/json"},
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $token", // ✅ Include token
+      },
       body: jsonEncode({
         "name": name,
         "type": type,
@@ -55,9 +59,11 @@ class CategoryService {
     if (response.statusCode == 201) {
       return Category.fromJson(jsonDecode(response.body)['category']);
     } else {
+      print("❌ Category creation failed: ${response.body}");
       throw Exception("Failed to create category");
     }
   }
+
 
   // ✅ Delete a Category
   Future<bool> deleteCategory(String id) async {

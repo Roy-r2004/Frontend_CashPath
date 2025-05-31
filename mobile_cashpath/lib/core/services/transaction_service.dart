@@ -5,6 +5,9 @@ import 'package:mobile_cashpath/models/transaction_model.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:mobile_cashpath/models/account_model.dart';
 import 'package:mobile_cashpath/models/category_model.dart';
+import 'package:mobile_cashpath/core/services/budget_service.dart';
+
+import 'auth_service.dart';
 
 class TransactionService {
   final _storage = const FlutterSecureStorage();
@@ -78,32 +81,13 @@ class TransactionService {
     final token = await _getToken();
     if (token == null) throw Exception("User not authenticated");
 
-    // ✅ Fetch the current account balance before making changes
-    final accountResponse = await http.get(
-      Uri.parse("${ApiEndpoints.accounts}/$accountId"),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-
-    if (accountResponse.statusCode != 200) return false;
-
-    final accountData = jsonDecode(accountResponse.body)['account'];
-    double currentBalance = double.tryParse(accountData['balance'].toString()) ?? 0.0;
-
-    // ✅ Calculate updated balance
-    double updatedBalance = (type == "Income") ? currentBalance + amount : currentBalance - amount;
-
-    // ✅ Prevent negative balance for expenses
-    if (type == "Expense" && updatedBalance < 0) {
-      print("❌ Insufficient funds! Transaction aborted.");
-      return false;
-    }
-
     // ✅ Proceed with transaction creation
     final response = await http.post(
       Uri.parse(ApiEndpoints.transactions),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
+        'Accept': 'application/json', // Laravel API needs this
+        'Authorization': 'Bearer $token', // ✅ Pass the token here
       },
       body: jsonEncode({
         "user_id": userId,
@@ -119,14 +103,16 @@ class TransactionService {
     );
 
     if (response.statusCode == 201) {
-      // ✅ Update account balance after transaction creation
-      await updateAccountBalance(accountId, updatedBalance);
+      print("✅ Transaction Created Successfully");
+      await BudgetService().getBudgets(); // Optional to reload locally
+      await BudgetService().getBudgetSummary(); // Optional to reload summary
       return true;
-    } else {
+    }else {
       print("❌ Error creating transaction: ${response.body}");
       return false;
     }
   }
+
 
 
 
@@ -213,6 +199,28 @@ class TransactionService {
     }
   }
 
+  /// ✅ Fetch statistics grouped by category for income/expense
+  Future<Map<String, dynamic>> getStatistics(int year, int month) async {
+    final token = await _getToken();
+    if (token == null) throw Exception("User not authenticated");
+
+    final response = await http.get(
+      Uri.parse("${ApiEndpoints.transactions}/statistics?year=$year&month=$month"),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      print("📊 Statistics API Response: $data");
+      return data;
+    } else {
+      print("❌ Error fetching statistics: ${response.body}");
+      throw Exception("Failed to fetch statistics");
+    }
+  }
+
+
+
 
   // ✅ Update an existing transaction
   Future<bool> updateTransaction(String transactionId, Map<String, dynamic> updatedData) async {
@@ -272,8 +280,9 @@ class TransactionService {
     );
 
     if (response.statusCode == 200) {
-      // ✅ Update account balance
       await updateAccountBalance(accountId, updatedBalance);
+      await BudgetService().getBudgets();
+      await BudgetService().getBudgetSummary();
       return true;
     } else {
       print("❌ Failed to update transaction: ${response.body}");
@@ -322,8 +331,9 @@ class TransactionService {
     );
 
     if (response.statusCode == 200) {
-      // ✅ Update account balance after transaction deletion
       await updateAccountBalance(accountId, updatedBalance);
+      await BudgetService().getBudgets();
+      await BudgetService().getBudgetSummary();
       return true;
     } else {
       print("❌ Failed to delete transaction: ${response.body}");

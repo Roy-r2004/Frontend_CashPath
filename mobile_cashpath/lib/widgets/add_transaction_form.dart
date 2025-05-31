@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_cashpath/core/services/transaction_service.dart';
+import 'package:mobile_cashpath/core/services/category_service.dart';
 import 'package:mobile_cashpath/models/account_model.dart';
 import 'package:mobile_cashpath/models/category_model.dart';
 import 'package:mobile_cashpath/core/services/auth_service.dart';
@@ -30,22 +31,15 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
   @override
   void initState() {
     super.initState();
-    _fetchAccountsAndCategories();
-    _fetchUserId();
+    _initializeData();
   }
 
-  /// ✅ Fetch user ID
-  Future<void> _fetchUserId() async {
+  Future<void> _initializeData() async {
     final userId = await AuthService.getUserId();
-    setState(() => _userId = userId);
-  }
-
-  /// ✅ Fetch accounts and categories
-  Future<void> _fetchAccountsAndCategories() async {
     final accounts = await TransactionService().getAccounts();
     final categories = await TransactionService().getCategories();
-
     setState(() {
+      _userId = userId;
       _accounts = accounts;
       _categories = categories;
       if (accounts.isNotEmpty) _selectedAccount = accounts.first.id;
@@ -53,10 +47,89 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
     });
   }
 
-  /// ✅ Submit the transaction and update account balance
+  Future<void> _createCategoryDialog() async {
+    final TextEditingController _categoryNameController = TextEditingController();
+    String selectedType = _selectedType;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text("Create Category"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _categoryNameController,
+                  decoration: InputDecoration(
+                    labelText: "Category Name",
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    ChoiceChip(
+                      label: Text("Income"),
+                      selected: selectedType == "Income",
+                      onSelected: (selected) {
+                        if (selected) setStateDialog(() => selectedType = "Income");
+                      },
+                    ),
+                    ChoiceChip(
+                      label: Text("Expense"),
+                      selected: selectedType == "Expense",
+                      onSelected: (selected) {
+                        if (selected) setStateDialog(() => selectedType = "Expense");
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                child: Text("Cancel"),
+                onPressed: () => Navigator.pop(context),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text("Create"),
+                onPressed: () async {
+                  if (_categoryNameController.text.isNotEmpty) {
+                    try {
+                      final category = await CategoryService().createCategory(
+                        name: _categoryNameController.text,
+                        type: selectedType,
+                      );
+                      setState(() {
+                        _categories.add(category);
+                        _selectedCategory = category.id;
+                      });
+                      Navigator.pop(context);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text("Failed to create category"),
+                        backgroundColor: Colors.red,
+                      ));
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _submitTransaction() async {
     if (!_formKey.currentState!.validate() || _userId == null) return;
-
     setState(() => _isSubmitting = true);
 
     double amount = double.parse(_amountController.text);
@@ -73,7 +146,6 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
       isRecurring: _isRecurring,
     );
 
-    // ✅ If transaction is successful, update the account balance
     if (success) {
       await _updateAccountBalance(_selectedAccount!, amount, _selectedType);
       Navigator.pop(context, true);
@@ -83,29 +155,14 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
         backgroundColor: Colors.red,
       ));
     }
-
     setState(() => _isSubmitting = false);
   }
 
-  /// ✅ Update account balance after transaction
   Future<void> _updateAccountBalance(String accountId, double amount, String type) async {
-    Account? selectedAccount = _accounts.firstWhere((acc) => acc.id == accountId, orElse: () => Account(
-      id: accountId,
-      userId: _userId!,
-      name: "",
-      balance: 0.0,
-      accountType: "",
-      currency: "",
-      icon: "",
-      isDefault: false,
-    ));
-
-    if (selectedAccount == null) return;
-
+    Account selectedAccount = _accounts.firstWhere((acc) => acc.id == accountId);
     double updatedBalance = (type == "Income")
         ? selectedAccount.balance + amount
         : selectedAccount.balance - amount;
-
     await TransactionService().updateAccountBalance(accountId, updatedBalance);
   }
 
@@ -117,55 +174,63 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
         backgroundColor: Colors.white,
         iconTheme: IconThemeData(color: Colors.black),
       ),
-      body: Padding(
+      body: _userId == null
+          ? Center(child: CircularProgressIndicator())
+          : Padding(
         padding: EdgeInsets.all(16),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: ListView(
             children: [
-              /// ✅ Amount Input
               TextFormField(
                 controller: _amountController,
                 keyboardType: TextInputType.number,
-                decoration: InputDecoration(labelText: "Amount"),
+                decoration: InputDecoration(
+                  labelText: "Amount",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) return "Enter amount";
                   if (double.tryParse(value) == null) return "Enter a valid number";
                   return null;
                 },
               ),
-
-              /// ✅ Date Picker
-              ListTile(
-                title: Text("Date: ${DateFormat.yMMMd().format(_selectedDate)}"),
-                trailing: Icon(Icons.calendar_today),
-                onTap: () async {
-                  DateTime? pickedDate = await showDatePicker(
-                    context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2100),
-                  );
-                  if (pickedDate != null) setState(() => _selectedDate = pickedDate);
-                },
-              ),
-
-              /// ✅ Time Picker
-              ListTile(
-                title: Text("Time: ${_selectedTime.format(context)}"),
-                trailing: Icon(Icons.access_time),
-                onTap: () async {
-                  TimeOfDay? pickedTime = await showTimePicker(
-                    context: context,
-                    initialTime: _selectedTime,
-                  );
-                  if (pickedTime != null) setState(() => _selectedTime = pickedTime);
-                },
-              ),
-
-              /// ✅ Transaction Type Selector
+              SizedBox(height: 12),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Expanded(
+                    child: ListTile(
+                      title: Text("Date: ${DateFormat.yMMMd().format(_selectedDate)}"),
+                      trailing: Icon(Icons.calendar_today),
+                      onTap: () async {
+                        DateTime? pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: _selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (pickedDate != null) setState(() => _selectedDate = pickedDate);
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: ListTile(
+                      title: Text("Time: ${_selectedTime.format(context)}"),
+                      trailing: Icon(Icons.access_time),
+                      onTap: () async {
+                        TimeOfDay? pickedTime = await showTimePicker(
+                          context: context,
+                          initialTime: _selectedTime,
+                        );
+                        if (pickedTime != null) setState(() => _selectedTime = pickedTime);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ChoiceChip(
                     label: Text("Income"),
@@ -174,6 +239,7 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                       if (selected) setState(() => _selectedType = "Income");
                     },
                   ),
+                  SizedBox(width: 10),
                   ChoiceChip(
                     label: Text("Expense"),
                     selected: _selectedType == "Expense",
@@ -183,8 +249,7 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                   ),
                 ],
               ),
-
-              /// ✅ Account Dropdown
+              SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _selectedAccount,
                 items: _accounts.map((account) {
@@ -194,42 +259,60 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                   );
                 }).toList(),
                 onChanged: (value) => setState(() => _selectedAccount = value),
-                decoration: InputDecoration(labelText: "Select Account"),
+                decoration: InputDecoration(
+                  labelText: "Select Account",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 validator: (value) => value == null ? "Select an account" : null,
               ),
-
-              /// ✅ Category Dropdown
-              DropdownButtonFormField<String>(
-                value: _selectedCategory,
-                items: _categories.map((category) {
-                  return DropdownMenuItem(
-                    value: category.id,
-                    child: Text(category.name),
-                  );
-                }).toList(),
-                onChanged: (value) => setState(() => _selectedCategory = value),
-                decoration: InputDecoration(labelText: "Select Category"),
-                validator: (value) => value == null ? "Select a category" : null,
+              SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedCategory,
+                      items: _categories.map((category) {
+                        return DropdownMenuItem(
+                          value: category.id,
+                          child: Text(category.name),
+                        );
+                      }).toList(),
+                      onChanged: (value) => setState(() => _selectedCategory = value),
+                      decoration: InputDecoration(
+                        labelText: "Select Category",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      validator: (value) => value == null ? "Select a category" : null,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.add, color: Colors.blue),
+                    onPressed: _createCategoryDialog,
+                  ),
+                ],
               ),
-
-              /// ✅ Note Input
+              SizedBox(height: 12),
               TextFormField(
                 controller: _noteController,
-                decoration: InputDecoration(labelText: "Note (Optional)"),
+                decoration: InputDecoration(
+                  labelText: "Note (Optional)",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
-
-              /// ✅ Recurring Transaction Switch
               SwitchListTile(
                 title: Text("Recurring Transaction"),
                 value: _isRecurring,
                 onChanged: (value) => setState(() => _isRecurring = value),
               ),
-
-              /// ✅ Submit Button
               SizedBox(height: 20),
               ElevatedButton(
                 onPressed: _isSubmitting ? null : _submitTransaction,
-                child: _isSubmitting ? CircularProgressIndicator() : Text("Add Transaction"),
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _isSubmitting
+                    ? CircularProgressIndicator(color: Colors.white)
+                    : Text("Add Transaction"),
               ),
             ],
           ),

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_cashpath/screens/home/transactions_screen.dart';
-import 'statistics_screen.dart';
+import 'package:mobile_cashpath/screens/home/statistics_screen.dart';
 import 'package:mobile_cashpath/screens/home/account_screen.dart';
 import 'package:mobile_cashpath/settings/settings_screen.dart';
+import 'package:mobile_cashpath/screens/home/budget_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -16,6 +17,7 @@ class _HomeScreenState extends State<HomeScreen> {
     TransactionsScreen(),
     StatisticsScreen(),
     AccountsScreen(),
+    BudgetScreen(),
     SettingsScreen(),
   ];
 
@@ -51,6 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.account_balance_wallet),
             label: "Accounts",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.savings),
+            label: "Budget",
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
